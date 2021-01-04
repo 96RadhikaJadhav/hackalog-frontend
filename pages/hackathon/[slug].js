@@ -5,43 +5,92 @@ import { useAuth } from "../../context/auth";
 import Tab from 'react-bootstrap/Tab';
 import Tabs from 'react-bootstrap/Tabs';
 import Date from "../../components/Date/Date";
+import { useRouter } from 'next/router';
+import {
+	Button, Spinner, Jumbotron,
+	Row, Col, Container, Image,
+} from "react-bootstrap";
 
 export default function Hackathon() {
     const { firebaseUser, token, loading } = useAuth();
+    console.log(token);
     const [hackathon, setHackathon] = useState([]);
     const [id, setId] = useState([]);
     const [participants, setParticipants] = useState([]);
     const [activeTab, setActiveTab] = useState([]);
-    const [allSubmissions, setAllSubmisssions]  = useState([]);
+    const [topSubmissions, setTopSubmissions] = useState([]);
+    const [allSubmissions, setAllSubmissions]  = useState([]);
+    const router = useRouter();
+    const {slug} = router.query;
     useEffect(
         () => {
-            axios.defaults.headers.common['Authorization'] = `Token ${token}`;
-            axios.get('/hackathon/iitbhuhack/').then(
+            if (slug) {
+            console.log(slug);
+            axios.get(`/hackathon/${slug}/`)
+            .then(
                 (response) => {
+                
                 setHackathon(response.data);
-                setId(hackathon.id);
+                setId(response.data.id);
+                console.log(response.data.id);
+                
+                axios.get(`/hackathons/${response.data.id}/submissions/`).then(
+                    (submissions) => {
+                    setTopSubmissions(submissions.data.sort((a,b) => b.score >  a.score? 1: -1).slice (0,10));
+                    setAllSubmissions(submissions.data);
+                    
+                    }
+                ).catch(
+                    (err) => null 
+                )
                 }
             ).catch(
                 (err) => null
             )
-            axios.get('/hackathons/1/teams/').then(
-                (response) => setParticipants(response.data)
-            ).catch(
-               (err) => null 
-            )
-            axios.get('/hackathons/1/submissions/').then(
-                (response) => setAllSubmisssions(response.data.sort((a,b) => b.score >  a.score? 1: -1).slice (0,10))
-            ).catch(
-               (err) => null 
-            )
-        }, []
-    )
+            }
+        }, [slug]
+    );
+    
 
+    //logged in - OVER (submission) NOT OVER (your submission) NOT STARTED (participants)
+    //logged out - OVER(submissions) NOT OVER(nothing) NOT STARTED(nothing)
+
+        let component;
+        let tab_name;
+        if (hackathon.status == "Completed") {
+            tab_name = "All submissions"
+            if (allSubmissions.length == 0) {
+                component = <div> No submissions yet </div>
+            }
+            else { 
+                component = <AllSubmissions submissions = {allSubmissions}/>
+            }           
+        } else if(hackathon.status == "Ongoing" && token) {
+            tab_name = "Your submissions"
+            if (allSubmissions.length == 0) {
+                component = <div> No submissions yet </div>
+            }
+            else { 
+                component = <AllSubmissions submissions = {allSubmissions}/>
+            }     
+        } else if (hackathon.status == 'Upcoming' && token){
+            tab_name = "Participants"
+            axios.defaults.headers.common["Authorization"] = `Token ${token}`;
+            axios
+            .get(`/hackathons/${id}/teams/`)
+            .then((teams) => setParticipants(teams.data))
+            .catch((err) => null)  
+            component = <Participants participants = {participants}/>
+        } else {
+            tab_name = "Partcipants"
+            component = <div> Please login to view</div>
+        }
+
+                  
     return(
         <div>
             <div className="banner-section" style = {{background :`url(${hackathon.image})`}}>
-                <div>
-                    
+                <div> 
                 </div>
             </div>
             <div className = "body ">
@@ -54,19 +103,14 @@ export default function Hackathon() {
                         <Overview hackathon = {hackathon}/>
                         </div>
                         </Tab>
-                        <Tab eventKey= "participants" title='Participants'>
+                        <Tab eventKey= "participants" title = {tab_name}>
                             <div className =" tabContent">
-                            <Participants participants = {participants}/>
-                            </div>
-                        </Tab>
-                        <Tab eventKey= "upadtes" title='Updates'>
-                            <div className =" tabContent">
-                            <Overview hackathon = {hackathon}/>
+                            {component}
                             </div>
                         </Tab>
                         <Tab eventKey = "leaderboard" title = "Leaderboard">
                             <div className =" tabContent">
-                            <Leaderboard submissions = {allSubmissions}/>
+                            { (topSubmissions.length == 0) ?( <div> No submissions yet </div> ):( <Leaderboard submissions = {topSubmissions}/>)} 
                             </div>
                         </Tab>
                 </Tabs>
@@ -123,6 +167,25 @@ export default function Hackathon() {
         </div>
     )
 }
+
+function Loading() {
+    return (
+        <Container className="text-center">
+				<Spinner
+					style={{
+						position: "absolute",
+						top: "50%",
+					}}
+					className="mt-auto mb-auto"
+					animation="border"
+					role="status"
+				>
+					<span className="sr-only">Loading...</span>
+				</Spinner>
+		</Container>
+    )
+
+}
 function Overview( {hackathon} )  {
     return (
         <div className = "overview_body">
@@ -175,8 +238,7 @@ function Participants({participants}) {
                  height: 7vh;
                  margin-left: 50px;
                  margin-bottom: 4px;
-                 padding: 10px;
-                 
+                 padding: 10px;    
              }
              `}</style></div> ) : <ol> </ol>
             )}
@@ -199,7 +261,8 @@ function Leaderboard({submissions}) {
                         <div className = "team"> {submission.team} </div>
                         <div className = "score"> {submission.score} </div>
                     </div>
-            )}
+            )} 
+
            <style jsx>{`
                 .rank {
                     width: 10vw;
@@ -209,6 +272,47 @@ function Leaderboard({submissions}) {
                 }
                 .score {
                     width: 10vw;
+                }
+                .bg-grey {
+                 background-color: rgba(0.9,0,0,0.04);
+                 display : flex;
+                 height: 7vh;
+                 margin-left: 50px;
+                 margin-bottom: 4px;
+                 margin-top: 4px;
+                 color: rgba(0.9,0,0,0.8);
+                 padding: 10px;
+                }
+                .heading {
+                 color: black
+                }
+            `}</style>
+        </div>
+        )
+}
+
+
+function AllSubmissions({submissions}) {
+        console.log(submissions.length);
+        return (
+        <div>
+            <div className = "bg-grey heading"> 
+                <div className = "rank"> <h6>Sl. No.</h6> </div>
+                <div className = "team"> <h6>TEAM NAME</h6> </div>
+            </div>
+        
+            { submissions.map( (submission,index) => 
+                    <div className = "bg-grey">
+                        <div className = "rank"> {index + 1}.</div>
+                        <div className = "team"> {submission.team} </div>
+                    </div>
+            )}
+           <style jsx>{`
+                .rank {
+                    width: 20vw;
+                }
+                .team {
+                    width:30vw;
                 }
                 .bg-grey {
                  background-color: rgba(0.9,0,0,0.04);
